@@ -26,7 +26,7 @@ exe=bfs
 args='/usr/uo/1/vrkrishn/part2/jobs/submit.py'
 
 cp $execdir/$exe $exe
-LD_LIBARY_PATH=$execdir/lib:${LD_LIBRARY_PATH}
+LD_LIBRARY_PATH=$execdir/lib:${LD_LIBRARY_PATH}
 
 # Run my executable
 omplace -nt NCORES ./$exe $args NCORES
