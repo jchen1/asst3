@@ -1,8 +1,8 @@
 #ifndef __BFS_H__
 #define __BFS_H__
 
-//#define USE_HYBRID_FUNCTION
-//#define DEBUG
+#define USE_HYBRID_FUNCTION
+// #define DEBUG_HYBRID
 
 struct graph;
 
@@ -15,6 +15,12 @@ struct vertex_set {
     int  count;
     int  alloc_count;
     int* present;
+};
+
+struct graph_info {
+    size_t frontier_edges;
+    size_t frontier_vertices;
+    size_t unexplored_edges;
 };
 
 
