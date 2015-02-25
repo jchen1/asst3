@@ -4,6 +4,10 @@
 #include <cstddef>
 #include <omp.h>
 
+#include <algorithm>
+#include <numeric>
+#include <vector>
+
 #include "CycleTimer.h"
 #include "bfs.h"
 #include "graph.h"
@@ -21,80 +25,98 @@ void vertex_set_init(vertex_set* list, int count) {
     vertex_set_clear(list);
 }
 
-void bfs_hybrid(graph* graph, solution* sol)
-{
-    vertex_set list1;
-    vertex_set list2;
-    vertex_set_init(&list1, graph->num_nodes);
-    vertex_set_init(&list2, graph->num_nodes);
+// void bfs_hybrid(graph* graph, solution* sol)
+// {
+//     vertex_set list1;
+//     vertex_set list2;
+//     vertex_set_init(&list1, graph->num_nodes);
+//     vertex_set_init(&list2, graph->num_nodes);
 
-    vertex_set* frontier = &list1;
-    vertex_set* new_frontier = &list2;
+//     vertex_set* frontier = &list1;
+//     vertex_set* new_frontier = &list2;
 
-    // initialize all nodes to NOT_VISITED
-    for (int i=0; i<graph->num_nodes; i++)
-        sol->distances[i] = NOT_VISITED_MARKER;
+//     // initialize all nodes to NOT_VISITED
+//     for (int i=0; i<graph->num_nodes; i++)
+//         sol->distances[i] = NOT_VISITED_MARKER;
 
-    // setup frontier with the root node
-    frontier->present[frontier->count++] = ROOT_NODE_ID;
-    sol->distances[ROOT_NODE_ID] = 0;
+//     // setup frontier with the root node
+//     frontier->present[frontier->count++] = ROOT_NODE_ID;
+//     sol->distances[ROOT_NODE_ID] = 0;
 
-    int step = 0;
-    while (frontier->count != 0) {
+//     int step = 0;
+//     while (frontier->count != 0) {
 
-#ifdef DEBUG
-        double start_time = CycleTimer::currentSeconds();
-#endif
+// #ifdef DEBUG
+//         double start_time = CycleTimer::currentSeconds();
+// #endif
 
-        vertex_set_clear(new_frontier);
+//         vertex_set_clear(new_frontier);
 
-        if ()
-        bottom_up_step(graph, frontier, new_frontier, sol->distances, step++);
+//         if ()
+//         bottom_up_step(graph, frontier, new_frontier, sol->distances, step++);
 
-#ifdef DEBUG
-        double end_time = CycleTimer::currentSeconds();
-        printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
-#endif
+// #ifdef DEBUG
+//         double end_time = CycleTimer::currentSeconds();
+//         printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
+// #endif
 
-        // swap pointers
-        vertex_set* tmp = frontier;
-        frontier = new_frontier;
-        new_frontier = tmp;
-    }
+//         // swap pointers
+//         vertex_set* tmp = frontier;
+//         frontier = new_frontier;
+//         new_frontier = tmp;
+//     }
 
-    free(frontier->present);
-    free(new_frontier->present);
-}
+//     free(frontier->present);
+//     free(new_frontier->present);
+// }
 
 
 // We note that in step s of the BFS, everything that should be added to the new
 // frontier has a neighbor with distance s (and everything in the frontier has
 // distance s), and no neighbors with distance less than s
 
-void bottom_up_step(
+int bottom_up_step(
     graph* g,
-    vertex_set* frontier,
-    vertex_set* new_frontier,
+    char* frontier,
+    char* new_frontier,
     int* distances,
     int step)
 {
-    #pragma omp parallel for
-    for (int node = 0; node < g->num_nodes; node++) {
-        if (distances[node] == NOT_VISITED_MARKER) {
-            int start_edge = g->incoming_starts[node];
-            int end_edge = (node == g->num_nodes - 1) ? g->num_edges : g->incoming_starts[node + 1];
+    int frontier_full = 0;
+    static int local_frontier_full = 0;
 
-            for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
-                int distance = distances[g->incoming_edges[neighbor]];
+    #pragma omp threadprivate(local_frontier_full)
 
-                if (distance == step) {
-                    distances[node] = distance + 1;
-                    new_frontier->present[__sync_fetch_and_add(&(new_frontier->count), 1)] = node;
-                    break;
+    #pragma omp parallel shared(frontier_full)
+    {
+        local_frontier_full = 0;
+
+        #pragma omp for
+        for (int node = 0; node < g->num_nodes; node++) {
+            if (distances[node] == NOT_VISITED_MARKER) {
+                int start_edge = g->incoming_starts[node];
+                int end_edge = (node == g->num_nodes - 1) ? g->num_edges : g->incoming_starts[node + 1];
+
+                for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
+                    int distance = distances[g->incoming_edges[neighbor]];
+
+                    if (distance == step) {
+                        distances[node] = distance + 1;
+                        new_frontier[node] = 1;
+                        local_frontier_full = 1;
+                        // new_frontier->present[__sync_fetch_and_add(&(new_frontier->count), 1)] = node;
+                        break;
+                    }
                 }
             }
         }
+
+        #pragma omp atomic
+        frontier_full += local_frontier_full;
     }
+
+
+    return frontier_full;
 }
 
 void bfs_bottom_up(graph* graph, solution* sol)
@@ -111,46 +133,45 @@ void bfs_bottom_up(graph* graph, solution* sol)
     // code by creating subroutine bottom_up_step() that is called in
     // each step of the BFS process.
 
-    vertex_set list1;
-    vertex_set list2;
-    vertex_set_init(&list1, graph->num_nodes);
-    vertex_set_init(&list2, graph->num_nodes);
+    char* frontier = new char[graph->num_nodes], *new_frontier = new char[graph->num_nodes];
 
-    vertex_set* frontier = &list1;
-    vertex_set* new_frontier = &list2;
+    memset(frontier, 0, sizeof(char) * graph->num_nodes);
+    memset(new_frontier, 0, sizeof(char) * graph->num_nodes);
+
 
     // initialize all nodes to NOT_VISITED
     for (int i=0; i<graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 
     // setup frontier with the root node
-    frontier->present[frontier->count++] = ROOT_NODE_ID;
+    // frontier->present[frontier->count++] = ROOT_NODE_ID;
+    frontier[ROOT_NODE_ID] = 1;
     sol->distances[ROOT_NODE_ID] = 0;
 
-    int step = 0;
-    while (frontier->count != 0) {
+    int step = 0, frontier_full = 1;
+    while (frontier_full != 0) {
 
 #ifdef DEBUG
         double start_time = CycleTimer::currentSeconds();
 #endif
 
-        vertex_set_clear(new_frontier);
+        // memset(new_frontier->front(), 0, sizeof(char) * graph->num_nodes);
+        // new_frontier->clear();
+        // new_frontier->resize(graph->num_nodes, 0);
+        memset(new_frontier, 0, sizeof(char) * graph->num_nodes);
 
-        bottom_up_step(graph, frontier, new_frontier, sol->distances, step++);
+        frontier_full = bottom_up_step(graph, frontier, new_frontier, sol->distances, step++);
 
 #ifdef DEBUG
         double end_time = CycleTimer::currentSeconds();
-        printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
+        printf("frontier=%-10d %.4f sec\n", 1, end_time - start_time);
 #endif
 
         // swap pointers
-        vertex_set* tmp = frontier;
+        char* tmp = frontier;
         frontier = new_frontier;
         new_frontier = tmp;
     }
-
-    free(frontier->present);
-    free(new_frontier->present);
 }
 
 
