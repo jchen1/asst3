@@ -2,7 +2,7 @@
 #PBS -l ncpus=ROUNDCORES
 #PBS -l pmem=8gb
 #ncpus must be a multiple of 16
-#PBS -l walltime=10:00              
+#PBS -l walltime=10:00
 
 # Merge stdout and stderr into one output file
 #PBS -j oe
