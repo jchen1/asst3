@@ -48,14 +48,13 @@ void bottom_up_step(
     info->frontier_edges = 0;
     info->frontier_vertices = 0;
 
-    static size_t local_frontier_size = 0, local_explored_edges = 0, local_frontier_edges = 0;
+    static size_t local_frontier_size = 0, local_explored_edges = 0;
 
-    #pragma omp threadprivate(local_frontier_size, local_frontier_edges, local_explored_edges)
+    #pragma omp threadprivate(local_frontier_size, local_explored_edges)
 
     #pragma omp parallel
     {
         local_frontier_size = 0;
-        local_frontier_edges = 0;
         local_explored_edges = 0;
 
         #pragma omp for
@@ -257,6 +256,7 @@ void bfs_top_down(graph* graph, solution* sol) {
 }
 
 #define ALPHA 14
+#define BETA 24
 
 void bfs_hybrid(graph* graph, solution* sol)
 {
@@ -290,6 +290,8 @@ void bfs_hybrid(graph* graph, solution* sol)
     int step = 0;
     graph_info info;
 
+    bool use_top_down = true;
+
     info.unexplored_edges = graph->num_edges;
     info.frontier_vertices = 1;
     info.frontier_edges = get_end_edge(ROOT_NODE_ID, graph) - get_start_edge(ROOT_NODE_ID, graph);
@@ -302,11 +304,18 @@ void bfs_hybrid(graph* graph, solution* sol)
 
         memset(new_frontier, 0, sizeof(char) * graph->num_nodes);
 
-        if (info.frontier_edges > info.unexplored_edges / ALPHA) {
-            bottom_up_step(graph, frontier, new_frontier, sol->distances, step, &info);
+        if (use_top_down && info.frontier_edges > info.unexplored_edges / ALPHA) {
+            use_top_down = false;
+        }
+        else if (!use_top_down && info.frontier_vertices < graph->num_nodes / BETA) {
+            use_top_down = true;
+        }
+
+        if (use_top_down) {
+            top_down_step(graph, frontier, new_frontier, sol->distances, info.frontier_vertices, &info);
         }
         else {
-            top_down_step(graph, frontier, new_frontier, sol->distances, info.frontier_vertices, &info);
+            bottom_up_step(graph, frontier, new_frontier, sol->distances, step, &info);
         }
 
         step++;
